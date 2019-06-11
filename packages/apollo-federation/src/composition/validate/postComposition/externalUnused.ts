@@ -49,29 +49,17 @@ export const externalUnused = (schema: GraphQLSchema) => {
                 ),
           );
 
-          /**
-           * Provides exists on a _field_ that returns a type which is defined by an extension
-           * extend type Kitchen {
-           *   name: String @external
-           * }
-           *
-           * type User {
-           *   kitchen: Kitchen @provides(fields: "name)
-           * }
-           *
-           * Here, we have the external field. We want to search the schema for
-           * the return type of the PARENT of the external field (Kitchen)
-           *
-           * If we find a field that has the correct return, we should check the provides
-           * to see if the current external field is selected
-           */
-          if (externalField.name.value === 'name') {
-            console.log(getNamedType(externalField));
-            const hasMatchingProvides = findTypesContainingFieldWithReturnType(
-              schema,
-              externalField,
-            ).map(childType => {
-              const fields = childType.getFields();
+          let providesDirectives = [];
+          /*
+            I have a type that has external fields on it
+            - if it has a key match
+            - if it has requires or provides as part of the same type (rare for provides)
+            - if any other type in the schema has fields that return this type, *and* that field has provides
+          */
+          findTypesContainingFieldWithReturnType(schema, namedType).map(
+            referencingType => {
+              console.log({ referencingType });
+              const fields = referencingType.getFields();
               Object.values(fields).forEach(maybeProvidesFieldFromChildType => {
                 providesDirectives = providesDirectives.concat(
                   findDirectivesOnTypeOrField(
@@ -80,23 +68,32 @@ export const externalUnused = (schema: GraphQLSchema) => {
                   ),
                 );
               });
-            });
-          }
+            },
+          );
 
-          // console.log({ namedType, allFields, hasMatchingProvides });
           const hasMatchingProvidesOrRequires = Object.values(allFields).some(
             maybeProvidesField => {
               const fieldOwner =
                 maybeProvidesField.federation &&
                 maybeProvidesField.federation.serviceName;
 
-              if (fieldOwner !== serviceName) return false;
+              console.log({ serviceName, fieldOwner });
+              // if (fieldOwner !== serviceName || ) return false;
+              /**
+               * extend type Kitchen @key(fields: "id") {
+               *  id: ID! @external
+               *  name: String @external
+               *  otherKitchen: [Kitchen] @provides(fields: "name")
+               * }
+               */
 
               // if the provides is located directly on the type
               // type User { username: String, user: User @provides(fields: "username") }
-              let providesDirectives = findDirectivesOnTypeOrField(
-                maybeProvidesField.astNode,
-                'provides',
+              providesDirectives = providesDirectives.concat(
+                findDirectivesOnTypeOrField(
+                  maybeProvidesField.astNode,
+                  'provides',
+                ),
               );
 
               /*
@@ -106,7 +103,7 @@ export const externalUnused = (schema: GraphQLSchema) => {
                 and see if they have a provides directive that uses this
                 external field
 
-                type Review {
+                extend type Review {
                   author: User @provides(fields: "username")
                 }
 
@@ -117,22 +114,9 @@ export const externalUnused = (schema: GraphQLSchema) => {
                 }
               */
 
-              findTypesContainingFieldWithReturnType(
-                schema,
-                maybeProvidesField,
-              ).map(childType => {
-                const fields = childType.getFields();
-                Object.values(fields).forEach(
-                  maybeProvidesFieldFromChildType => {
-                    providesDirectives = providesDirectives.concat(
-                      findDirectivesOnTypeOrField(
-                        maybeProvidesFieldFromChildType.astNode,
-                        'provides',
-                      ),
-                    );
-                  },
-                );
-              });
+              // console.log({ maybeProvidesField });
+              // I know we need the Kitchen type, we have a name field that is @external,
+              // does any type in the schema, return a Kitchen *AND* provides(fields: "name")
 
               const requiresDirectives = findDirectivesOnTypeOrField(
                 maybeProvidesField.astNode,

@@ -117,7 +117,7 @@ describe('externalUnused', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('does not warn when @external is selected by a @provides used from a child type', () => {
+  fit('does not warn when @external is selected by a @provides used from another type', () => {
     const serviceA = {
       typeDefs: gql`
         type User @key(fields: "id") {
@@ -134,7 +134,7 @@ describe('externalUnused', () => {
           author: User @provides(fields: "username")
         }
 
-        type User {
+        extend type User @key(fields: "id") {
           username: String @external
         }
       `,
@@ -180,7 +180,20 @@ describe('externalUnused', () => {
     expect(warnings).toEqual([]);
   });
 
-  fit('doesnt warn when valid @external fields are the only fields in a type', () => {
+  xit('doesnt warn when valid @external fields are the only fields in a type', () => {
+    const serviceB = {
+      typeDefs: gql`
+        extend type Query {
+          kitchen: Kitchen
+        }
+
+        type Kitchen @key(fields: "id") {
+          id: ID!
+          name: String
+        }
+      `,
+      name: 'serviceB',
+    };
     const serviceA = {
       typeDefs: gql`
         extend type Query {
@@ -202,7 +215,7 @@ describe('externalUnused', () => {
       name: 'serviceA',
     };
 
-    const { schema, errors } = composeServices([serviceA]); //serviceB, serviceC]);
+    const { schema, errors } = composeServices([serviceA, serviceB]); //serviceB, serviceC]);
     const warnings = validateExternalUnused(schema);
     expect(warnings).toEqual([]);
   });
