@@ -345,10 +345,26 @@ addMockFunctionsToSchema({
 
 *  `privateVariables`: Array<String> | boolean
 
+   DEPRECATING IN VERSION XX.XX.XX for `enforcePrivateVariables`, which will support the same
+   functionalities but allow for more flexibility.
+   
    A case-sensitive list of names of variables whose values should not be sent
    to Apollo servers, or 'true' to leave out all variables. In the former
    case, the report will indicate that each private variable was redacted in
    the latter case, no variables are sent at all.
+   
+* `enforcePrivateVariables`: ((variables: Record<string, any>, operationString?: string) => Record<string, any>) | Array<String> | boolean
+    
+    A custom function for modifying variable values, a case-sensitive list of names 
+    of variables whose values should not be sent to Apollo servers, 
+    or `true` v. `false` to blacklist v. whitelist all variables, respectively. In the first
+    case, the report will indicate that variable values were modified by a custom function; 
+    in the second, the report will indicate each private variable redacted;
+    in the final case, the report will indicate whether the variables were all
+    blacklisted or whitelisted. Will default to `true` if both this parameter and
+    the to-be-deprecated `privateVariables` were not set.
+    
+    TODO: LINK TO EXAMPLE FUNCTION? e.g. a function recursively search for keys to be blacklisted
 
 *  `privateHeaders`: Array<String> | boolean
 

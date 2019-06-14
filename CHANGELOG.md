@@ -1,6 +1,7 @@
 # Changelog
 
 ### vNext
+- `apollo-engine-reporting`: Add new EngineReportingOption `enforcePrivateVariables`, and begin deprecating `privateVariables` [PR #2847](https://github.com/apollographql/apollo-server/pull/2847)
 
 ### v2.6.2
 
