@@ -117,7 +117,7 @@ describe('externalUnused', () => {
     expect(warnings).toEqual([]);
   });
 
-  fit('does not warn when @external is selected by a @provides used from another type', () => {
+  it('does not warn when @external is selected by a @provides used from another type', () => {
     const serviceA = {
       typeDefs: gql`
         type User @key(fields: "id") {
@@ -145,6 +145,35 @@ describe('externalUnused', () => {
     const warnings = validateExternalUnused(schema);
     expect(warnings).toEqual([]);
   });
+
+  // it('does not warn when @external is selected by a @requires used from another type', () => {
+  //   const serviceA = {
+  //     typeDefs: gql`
+  //       type User @key(fields: "id") {
+  //         id: ID!
+  //         username: String
+  //       }
+  //     `,
+  //     name: 'serviceA',
+  //   };
+
+  //   const serviceB = {
+  //     typeDefs: gql`
+  //       type Review {
+  //         author: User @provides(fields: "username")
+  //       }
+
+  //       extend type User @key(fields: "id") {
+  //         username: String @external
+  //       }
+  //     `,
+  //     name: 'serviceB',
+  //   };
+
+  //   const { schema, errors } = composeServices([serviceA, serviceB]);
+  //   const warnings = validateExternalUnused(schema);
+  //   expect(warnings).toEqual([]);
+  // });
 
   it('does not warn when @external is used on type with multiple @key directives', () => {
     const serviceA = {
@@ -176,46 +205,6 @@ describe('externalUnused', () => {
     };
 
     const { schema, errors } = composeServices([serviceA, serviceB, serviceC]);
-    const warnings = validateExternalUnused(schema);
-    expect(warnings).toEqual([]);
-  });
-
-  xit('doesnt warn when valid @external fields are the only fields in a type', () => {
-    const serviceB = {
-      typeDefs: gql`
-        extend type Query {
-          kitchen: Kitchen
-        }
-
-        type Kitchen @key(fields: "id") {
-          id: ID!
-          name: String
-        }
-      `,
-      name: 'serviceB',
-    };
-    const serviceA = {
-      typeDefs: gql`
-        extend type Query {
-          me: User
-        }
-
-        extend type Kitchen @key(fields: "id") {
-          id: ID! @external
-          name: String @external
-        }
-
-        type User @key(fields: "username") {
-          username: ID!
-          firstName: String!
-          kitchen: Kitchen @provides(fields: "name")
-          lastName: String!
-        }
-      `,
-      name: 'serviceA',
-    };
-
-    const { schema, errors } = composeServices([serviceA, serviceB]); //serviceB, serviceC]);
     const warnings = validateExternalUnused(schema);
     expect(warnings).toEqual([]);
   });

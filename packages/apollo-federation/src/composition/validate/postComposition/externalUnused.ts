@@ -1,16 +1,13 @@
-import {
-  GraphQLSchema,
-  isObjectType,
-  GraphQLError,
-  getNamedType,
-} from 'graphql';
+import { GraphQLSchema, isObjectType, GraphQLError, Kind } from 'graphql';
 
 import {
   findDirectivesOnTypeOrField,
   logServiceAndType,
   hasMatchingFieldInDirectives,
   errorWithCode,
-  findTypesContainingFieldWithReturnType,
+  findFieldsThatReturnType,
+  parseSelections,
+  isStringValueNode,
 } from '../../utils';
 
 /**
@@ -32,11 +29,10 @@ export const externalUnused = (schema: GraphQLSchema) => {
       for (const [serviceName, externalFieldsForService] of Object.entries(
         namedType.federation.externals,
       )) {
-        const keysForService = keySelections[serviceName];
+        const keysForService = keySelections && keySelections[serviceName];
         // for a single service, loop over the external fields.
         for (const { field: externalField } of externalFieldsForService) {
           const externalFieldName = externalField.name.value;
-          const allFields = namedType.getFields();
 
           // check the selected fields of every @key provided by `serviceName`
           const hasMatchingKeyOnType = Boolean(
@@ -48,105 +44,99 @@ export const externalUnused = (schema: GraphQLSchema) => {
                     selectedField.name.value === externalFieldName,
                 ),
           );
+          if (hasMatchingKeyOnType) continue;
 
-          let providesDirectives = [];
           /*
-            I have a type that has external fields on it
-            - if it has a key match
-            - if it has requires or provides as part of the same type (rare for provides)
-            - if any other type in the schema has fields that return this type, *and* that field has provides
+            @provides is most commonly used from another type than where
+            the @external directive is applied. We need to find all
+            fields on any type in the schema that return this type
+            and see if they have a provides directive that uses this
+            external field
+
+            extend type Review {
+              author: User @provides(fields: "username")
+            }
+
+            extend type User @key(fields: "id") {
+              id: ID! @external
+              username: String @external
+              reviews: [Review]
+            }
           */
-          findTypesContainingFieldWithReturnType(schema, namedType).map(
-            referencingType => {
-              console.log({ referencingType });
-              const fields = referencingType.getFields();
-              Object.values(fields).forEach(maybeProvidesFieldFromChildType => {
-                providesDirectives = providesDirectives.concat(
-                  findDirectivesOnTypeOrField(
-                    maybeProvidesFieldFromChildType.astNode,
-                    'provides',
-                  ),
-                );
-              });
-            },
-          );
-
-          const hasMatchingProvidesOrRequires = Object.values(allFields).some(
-            maybeProvidesField => {
-              const fieldOwner =
-                maybeProvidesField.federation &&
-                maybeProvidesField.federation.serviceName;
-
-              console.log({ serviceName, fieldOwner });
-              // if (fieldOwner !== serviceName || ) return false;
-              /**
-               * extend type Kitchen @key(fields: "id") {
-               *  id: ID! @external
-               *  name: String @external
-               *  otherKitchen: [Kitchen] @provides(fields: "name")
-               * }
-               */
-
-              // if the provides is located directly on the type
-              // type User { username: String, user: User @provides(fields: "username") }
-              providesDirectives = providesDirectives.concat(
-                findDirectivesOnTypeOrField(
-                  maybeProvidesField.astNode,
-                  'provides',
-                ),
+          const hasMatchingProvidesOnAnotherType =
+            findFieldsThatReturnType({
+              schema,
+              typeToFind: namedType,
+            }).filter(field => {
+              const directivesOnField = findDirectivesOnTypeOrField(
+                field.astNode,
+                'provides',
               );
 
-              /*
-                @provides is most commonly used from another type than where
-                the @external directive is applied. We need to find all
-                fields on any type in the schema that return this type
-                and see if they have a provides directive that uses this
-                external field
-
-                extend type Review {
-                  author: User @provides(fields: "username")
-                }
-
-                extend type User @key(fields: "id") {
-                  id: ID! @external
-                  username: String @external
-                  reviews: [Review]
-                }
-              */
-
-              // console.log({ maybeProvidesField });
-              // I know we need the Kitchen type, we have a name field that is @external,
-              // does any type in the schema, return a Kitchen *AND* provides(fields: "name")
-
-              const requiresDirectives = findDirectivesOnTypeOrField(
-                maybeProvidesField.astNode,
-                'requires',
+              const matchingProvidesDirective = directivesOnField.find(
+                directive => {
+                  if (!directive.arguments) return false;
+                  const selections =
+                    isStringValueNode(directive.arguments[0].value) &&
+                    parseSelections(directive.arguments[0].value.value);
+                  // find the selections which are fields with names matching
+                  // our external field name
+                  return selections.some(
+                    selection =>
+                      selection.kind === Kind.FIELD &&
+                      selection.name.value === externalFieldName,
+                  );
+                },
               );
+              return matchingProvidesDirective;
+            }).length > 0;
 
-              return (
-                hasMatchingFieldInDirectives({
-                  directives: providesDirectives,
-                  fieldNameToMatch: externalFieldName,
-                  namedType,
-                }) ||
-                hasMatchingFieldInDirectives({
-                  directives: requiresDirectives,
-                  fieldNameToMatch: externalFieldName,
-                  namedType,
-                })
-              );
-            },
-          );
+          if (hasMatchingProvidesOnAnotherType) continue;
 
-          if (!(hasMatchingKeyOnType || hasMatchingProvidesOrRequires)) {
-            errors.push(
-              errorWithCode(
-                'EXTERNAL_UNUSED',
-                logServiceAndType(serviceName, typeName, externalFieldName) +
-                  `is marked as @external but is not used by a @requires, @key, or @provides directive.`,
-              ),
+          const hasMatchingProvidesOrRequiresOnType = Object.values(
+            namedType.getFields(),
+          ).some(maybeProvidesField => {
+            const fieldOwner =
+              maybeProvidesField.federation &&
+              maybeProvidesField.federation.serviceName;
+
+            if (fieldOwner !== serviceName) return false;
+
+            // if the provides is located directly on the type
+            // type User { username: String, user: User @provides(fields: "username") }
+            const providesDirectives = findDirectivesOnTypeOrField(
+              maybeProvidesField.astNode,
+              'provides',
             );
-          }
+
+            const requiresDirectives = findDirectivesOnTypeOrField(
+              maybeProvidesField.astNode,
+              'requires',
+            );
+
+            return (
+              hasMatchingFieldInDirectives({
+                directives: providesDirectives,
+                fieldNameToMatch: externalFieldName,
+                namedType,
+              }) ||
+              hasMatchingFieldInDirectives({
+                directives: requiresDirectives,
+                fieldNameToMatch: externalFieldName,
+                namedType,
+              })
+            );
+          });
+
+          if (hasMatchingProvidesOrRequiresOnType) continue;
+
+          errors.push(
+            errorWithCode(
+              'EXTERNAL_UNUSED',
+              logServiceAndType(serviceName, typeName, externalFieldName) +
+                `is marked as @external but is not used by a @requires, @key, or @provides directive.`,
+            ),
+          );
         }
       }
     }
