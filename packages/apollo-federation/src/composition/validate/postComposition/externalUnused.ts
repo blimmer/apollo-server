@@ -63,33 +63,35 @@ export const externalUnused = (schema: GraphQLSchema) => {
               reviews: [Review]
             }
           */
-          const hasMatchingProvidesOnAnotherType =
-            findFieldsThatReturnType({
-              schema,
-              typeToFind: namedType,
-            }).filter(field => {
-              const directivesOnField = findDirectivesOnTypeOrField(
-                field.astNode,
-                'provides',
-              );
+          const hasMatchingProvidesOnAnotherType = findFieldsThatReturnType({
+            schema,
+            typeToFind: namedType,
+          }).some(field => {
+            const directivesOnField = findDirectivesOnTypeOrField(
+              field.astNode,
+              'provides',
+            );
 
-              const matchingProvidesDirective = directivesOnField.find(
-                directive => {
-                  if (!directive.arguments) return false;
-                  const selections =
-                    isStringValueNode(directive.arguments[0].value) &&
-                    parseSelections(directive.arguments[0].value.value);
-                  // find the selections which are fields with names matching
-                  // our external field name
-                  return selections.some(
+            const matchingProvidesDirective = directivesOnField.find(
+              directive => {
+                if (!directive.arguments) return false;
+                const selections =
+                  isStringValueNode(directive.arguments[0].value) &&
+                  parseSelections(directive.arguments[0].value.value);
+                // find the selections which are fields with names matching
+                // our external field name
+                return (
+                  selections &&
+                  selections.some(
                     selection =>
                       selection.kind === Kind.FIELD &&
                       selection.name.value === externalFieldName,
-                  );
-                },
-              );
-              return matchingProvidesDirective;
-            }).length > 0;
+                  )
+                );
+              },
+            );
+            return Boolean(matchingProvidesDirective);
+          });
 
           if (hasMatchingProvidesOnAnotherType) continue;
 
